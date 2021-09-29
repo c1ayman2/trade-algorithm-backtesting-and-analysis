@@ -1,0 +1,49 @@
+so, when testing trade algorithms, you cant really construct artificial test data very easily.
+so, the idea is, collect metrics on multiple "algorithms" for apples to apples comparisons.
+
+unfortunately, these ideas box you in to a statistical environment, because the only avenue you have to go down
+is on historical test data, and current test data.
+
+fortunately, I think BTC is a good avenue for test data because of its multiple boom/bust cycles.
+Its a nice way to lose your hat, at least theoretically.
+surely, this isn't a revolutionary idea.
+
+so, i will attempt to capture (weakly) the strategies of the internet age.
+With that, i will gather metrics on these 'strategies' to compare and contrast their performance.
+and be able to present these automated metrics in human readable formats by hucking them into dataframes
+and charting them with plotly.
+
+the candlestick analysis is handled by TA-Lib
+
+for simplicity sake, buy prices will be the average of the open and close value for the day.
+buying, selling, or holding will happen once a day/time step
+
+testing new algorithms should be simply inherit from the trader object, define your algorithm, and metrics should be collected and stored
+
+my intentions are to design a system that may backtest, but also do walk forward testing
+whether that happens, iunno.
+
+so, with that, a few things i want to try to make clear to myself:
+avoid letting the "future" leak into your tests and algorithms.
+
+i believe TA-lib is future ignorant when it comes to that regard, just by the nature of how the structure looks as its returned
+this i intend to test with a walk-forward approach.
+
+if these were actual algorithms not written by me, i would want to be fairly certain they have a strong degree of future ignorance.
+
+i want to avoid using random chance to break statistical ties within the trade strategies.
+
+some things i dont think i will be able to test against are:
+slow market declines
+luck (seriously)
+selection Bias. While i will attempt to compare and contrast the algorithms, i don't want to, myself, pick a clear winner.
+
+however, i want to try to capture the gap between trades, and the ages of trades; because if a market has gone stagnant
+it is very likely a more passive algorithm will stop trading overall in that time frame.
+this isnt inherently a bad thing, because when there is low market volatility, im concerned an algorithm might be too active
+acting on phantom indicators.
+that is why i am Apples to Apples for both a loose and tight approach to candle patterns
+
+one of my concerns for when i do walk forward testing, is that i don't throw out old market data, and hold on to
+the system state between executions.
+
