@@ -1,9 +1,7 @@
 """#
 
-
-
 """
-
+import collections
 import copy
 import statistics
 import math
@@ -16,27 +14,61 @@ from statistics import mean
 
 import pandas.io.pytables
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import plotly.express as px
 import pandas as pd
 import talib as ta
 import numpy as np
 import pprint as pp
+import dash
+from dash import dcc
+from dash import html
 
 pd.set_option("display.max_columns", 99)
 
 finnhub_client = finnhub.Client(api_key=keys.api_key)
 
 
-def popup_candles(df):
+def popup_candles(df, show=True):
     hrt = [time.ctime(int(x)) for x in df["t"]]
     fig = go.Figure(data=[go.Candlestick(x=hrt,
                                          open=df["o"],
                                          high=df["h"],
                                          low=df["l"],
-                                         close=df["c"])])
-    fig.show()
-    print(df)
+                                         close=df["c"])],
+                    layout={'title': "btc candles:USD"}
+                    )
+
+    if show: fig.show()  # bad form all around, yeah i know, whatever.
+
+    #print(df)
     return fig
+
+
+def new_popup_candles(df, algo):
+
+    app = dash.Dash()
+    app.layout = html.Div([
+
+        dcc.Graph(
+            figure=popup_candles(df, False),
+            style={'height': '60vh'}
+        ),
+        dcc.Graph(
+            figure=algo.popup_trade_historyvprice(),
+            style={'height': '80vh'}
+        ),
+        dcc.Graph(
+            figure=algo.popup_trade_history(),
+            style={'height': '80vh'}
+        ),
+    ])
+
+
+
+    app.run_server(debug=True, use_reloader=True)
+
+    return app
 
 
 def avg(*args):  # returns the average
@@ -52,6 +84,8 @@ def last_60_days(endtime=pd.Timestamp.now()):  # returns a delta of two dates (s
 def to_seconds(args):
     return [math.trunc(ar.timestamp()) for ar in args]
 
+def to_stamp(args):
+    return [time.ctime(int(x)) for x in args]
 
 def get_bin_candles_df(start_date=1590988249, end_date=1591852249):
     result = finnhub_client.crypto_candles('BINANCE:BTCUSDT', 'D', start_date, end_date)
@@ -79,6 +113,7 @@ class Trade:  # contains historical information about prior trades
     close_date: int = None
     close_profit: float = None
     profitability: float = None  # should only be read/written after close
+
 
     def print(self):
         print(("BP ", self.buy_price,
@@ -135,7 +170,7 @@ class Trader:  # superclass that controls the methods of operations. this is whe
         'balance': [float],
         'time': [int],
         'performance': [str],
-        'total_age_s': [int]
+        'total_age_s': [int],
     }
 
     def __init__(self, df, money: float = 15000):
@@ -143,8 +178,7 @@ class Trader:  # superclass that controls the methods of operations. this is whe
         self.liquid_money_remaining = money
         self.initial_balance = money
 
-    def buy(self, buy_price, budget,
-            buy_time: int):  # create trade object and chuck in into o_trades, subtract from money
+    def buy(self, buy_price, budget, buy_time: int):  # create trade object and chuck in into o_trades, subtract from money
         if self.liquid_money_remaining < 1:
             return False
 
@@ -187,26 +221,90 @@ class Trader:  # superclass that controls the methods of operations. this is whe
         print(self.perf_df)
         # linechart = px.line(x=self.perf_df["time"][1:], y=[self.perf_df["balance"][1:], self.perf_df["net_gain"][1:]+self.initial_balance])
         linechart = px.line(x=self.perf_df["time"][1:],
-                            y=self.perf_df["balance"][1:])
-        # linechart.add
-        # go.scatter.Line(self.perf_data["balance"])
-        linechart.show()
-        return
+                            y=self.perf_df["balance"][1:],
+                            title="liquid balance",
+                            labels={"x": "thing",
+                                    "y": "other thing"
+                                    }
+                            )
+
+
+        return linechart
 
     def popup_chart_profit(self):
         self.perf_df = pd.DataFrame.from_dict(self.perf_data)
         print("perf_df")
-        # print(self.perf_df)
-        # linechart = px.line(x=self.perf_df["time"][1:], y=[self.perf_df["balance"][1:], self.perf_df["net_gain"][1:]+self.initial_balance])
+
         linechart = px.line(x=self.perf_df["time"][1:],
-                            y=self.perf_df["profit"][1:],self.df)
+                            y=self.perf_df["profit"][1:],
+                            title="profit",
+                            labels={"x": "thing",
+                                    "y": "other thing"
+                                    }
+                            )
 
-        # go.scatter.Line(self.perf_data["balance"])
-        linechart.show()
-        return
+        return linechart
 
-    def popup_chart_trade_history(self):
-        pass
+    def popup_trade_history(self):
+        buysell = self.linearize_trade_hist()
+        key, value = buysell.keys(), list(buysell.values())  # man is this nasty, im not a fan.
+        buys = [item['n_open'] for item in value]
+        sells = [item['n_close'] for item in value]
+        #barchart= popup_candles(df,False).trace
+        #barchart.add_bar(x=to_stamp([*key]), y=buys, secondary_y=True)
+        barchart = px.bar(x=to_stamp([*key]), y=buys)
+#        barchart.append_trace(popup_candles(self.df,False))   ################
+        barchart.add_bar(x=to_stamp([*key]), y=sells)  ## , secondary_y=True
+        #barchart.add_scatter(x=to_stamp([*key]),y=buys)
+        return barchart
+
+    def popup_trade_historyvprice(self):
+
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        monkey = popup_candles(df, False)
+        #print(monkey.data[0]) ; print ("end monkey")
+        buysell = self.linearize_trade_hist()
+        key, value = buysell.keys(), list(buysell.values())  # man is this nasty, im not a fan.
+        buys = [item['n_open'] for item in value]
+        sells = [item['n_close'] for item in value]
+        fig.add_candlestick(x=monkey.data[0]['x'],
+                            open=monkey.data[0]['open'],
+                            high=monkey.data[0]['high'],
+                            low=monkey.data[0]['low'],
+                            close=monkey.data[0]['close'],
+                            secondary_y=False, name='BTC candles')
+        fig.add_bar(x=to_stamp([*key]), y=buys, secondary_y=True, name="buys", width=.2)
+        fig.add_bar(x=to_stamp([*key]), y=sells, secondary_y=True, name="sells", width=.2)
+
+       # fig
+        #fig.update_yaxes()
+        #barchart.add_scatter()
+        
+
+        return fig
+
+    def linearize_trade_hist(self):
+        buyclosetime = collections.OrderedDict()
+
+        for trade in self.o_trades:  # this was pretty stupid.
+            if trade.start_date not in buyclosetime:
+                buyclosetime[trade.start_date] = trade.start_date
+                buyclosetime[trade.start_date] = {'n_open': 0, 'n_close': 0}
+            buyclosetime[trade.start_date]['n_open'] += 1
+
+        for trade in self.c_trades:
+            if trade.start_date not in buyclosetime:
+                buyclosetime[trade.start_date] = trade.start_date
+                buyclosetime[trade.start_date] = {'n_open': 0, 'n_close': 0}
+            if trade.close_date not in buyclosetime:
+                buyclosetime[trade.close_date] = trade.start_date
+                buyclosetime[trade.close_date] = {'n_open': 0, 'n_close': 0}
+
+            buyclosetime[trade.start_date]['n_open'] += 1
+            buyclosetime[trade.close_date]['n_close'] += 1
+
+        return buyclosetime
+
 
     def print_trade_history(self):
         print("open trades")
@@ -282,8 +380,8 @@ class AlgoDCAProfit(Trader):
                 self.sell_at_profit(avg(row.o, row.c), row.t, 1.02)
             self.gather_data(row.t, avg(row.o, row.c))
 
-        self.print_trade_history()
-        self.popup_chart_profit()
+        #self.print_trade_history()
+
         # print(row.o)
         return
 
@@ -345,27 +443,29 @@ if __name__ == '__main__':
     for candle in candle_names:  # use TA-Lib to parse candles
         df[candle] = getattr(ta, candle)(df["o"], df["h"], df["l"], df["c"])
 
-    print(df)
-    print(df.columns)
+    ##print(df); print(df.columns)
 
     df.replace(0, np.nan, inplace=True)
     df.dropna(axis=1, how='all', inplace=True) ###### if you're going to stream, i recommend against this
 
-    print("after dropna")
-    print(df)
+    #print("after dropna"); print(df)
 
-    print("class tests")
-    #algoclass = AlgoNaive(df)
-    #algoclass.run_algo()
+    #print("class tests"); algoclass = AlgoNaive(df); algoclass.run_algo()
 
     algoclass2 = AlgoDCAProfit(df)
     algoclass2.algo()
 
-    # print(df.columns)
-    # print(df[candle_names]['CDLLONGLEGGEDDOJI'].iloc[1])
+
 
     # popup_candles(df)
+   ########## print("banan",popup_candles(df,False).data[0]['x'])
+
+    new_popup_candles(df, algoclass2)
+
+
 
     # print(*last_60_days("2020-04-06 20:00:00"))
     # print(*last_60_days())
+
+
     pass
